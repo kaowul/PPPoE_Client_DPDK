@@ -6,6 +6,10 @@ System required: Intel DPDK, Linux kernel > 3.10, at least 4G ram, 5 cpu cores(6
 
 ------------------------------------How to Use------------------------------------
 
+Git clone this repository and change branch to "timer"
+
+git clone https://github.com/w180112/PPPoE_Client_DPDK.git && git checkout timer
+
 Type "make" to compile
 
 Then 
