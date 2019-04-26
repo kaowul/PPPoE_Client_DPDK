@@ -16,7 +16,7 @@ typedef struct{
     U8   	state;
     U16   	event;
     U8   	next_state;
-    STATUS 	(*hdl[10])(int cp, tPPP_PORT *, struct ethhdr *, pppoe_header_t *, ppp_payload_t *, ppp_lcp_header_t *, ppp_lcp_options_t *);
+    STATUS 	(*hdl[10])(__attribute__((unused)) struct rte_timer *, tPPP_PORT *);
 } tPPP_STATE_TBL;
 
 /*--------- STATE TYPE ----------*/
@@ -67,8 +67,6 @@ typedef enum {
 #ifdef __cplusplus
 extern	"C" {
 #endif
-
-extern STATUS   PPP_FSM(int cp, tPPP_PORT *port_ccb, U16 event, /*void *arg,*/ struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header, ppp_payload_t *ppp_payload, ppp_lcp_header_t *ppp_lcp, ppp_lcp_options_t *ppp_lcp_options); 
 
 #ifdef __cplusplus
 }

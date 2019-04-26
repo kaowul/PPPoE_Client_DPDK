@@ -48,6 +48,60 @@ typedef struct {
 	U32		oids[128];
 } tMNG_ADDR;
 
+typedef struct pppoe_header {
+	uint8_t ver_type;
+	uint8_t code;
+	uint16_t session_id;
+	uint16_t length;
+} pppoe_header_t;
+
+typedef struct pppoe_header_tag {
+	uint16_t type;
+  	uint16_t length;
+  	// depend on the type and length.
+  	uint8_t value[0];
+} pppoe_header_tag_t;
+
+typedef struct ppp_lcp_header {
+	uint8_t code;
+	uint8_t identifier;
+	uint16_t length;
+	//uint8_t options[0];
+}ppp_lcp_header_t;
+
+typedef struct ppp_pap_ack_nak {
+	uint8_t msg_length;
+	uint8_t msg[0];
+}ppp_pap_ack_nak_t;
+
+typedef struct ppp_payload {
+	uint16_t ppp_protocol;
+	//ppp_lcp_header_t *ppp_lcp;
+}ppp_payload_t;
+
+typedef struct ppp_lcp_options {
+	uint8_t type;
+	uint8_t length;
+	uint8_t val[0];
+}ppp_lcp_options_t;
+
+typedef struct pppoe_phase {
+	struct ethhdr 		*eth_hdr;
+	pppoe_header_t 		*pppoe_header;
+	pppoe_header_tag_t	*pppoe_header_tag;
+	uint8_t 			max_retransmit;
+}pppoe_phase_t;
+
+typedef struct ppp_phase {
+	struct ethhdr 		*eth_hdr;
+	pppoe_header_t 		*pppoe_header;
+	ppp_payload_t 		*ppp_payload;
+	ppp_lcp_header_t 	*ppp_lcp;
+	ppp_lcp_options_t 	*ppp_lcp_options;
+	uint8_t 			max_retransmit;
+	uint8_t				timer_counter;
+}ppp_phase_t;
+
 //========= The structure of port ===========
 typedef struct {
 	BOOL		enable;
@@ -59,6 +113,8 @@ typedef struct {
 	U32			omsg_cnt;
 	U32			err_imsg_cnt;	
 	
+	//tPPP_MSG 	imsg; //imsg.tlv[].vp still make use mailbox's data memory
+	
 	tSUB_VAL	chassis_id;
 	tSUB_VAL	port_id;
 		
@@ -69,6 +125,8 @@ typedef struct {
 	
 	tSYS_CAP	sys_cap;
 	tMNG_ADDR  	mng_addr;
+	ppp_phase_t ppp_phase;
+	int 		cp;	//cp is "control protocol", means we need to determine cp is LCP or NCP after parsing packet
 } tPPP_PORT;
 
 extern U8	 			g_loc_mac[]; //system mac addr -- global variable
@@ -79,11 +137,16 @@ extern U32				ppp_interval;
 extern U8				ppp_max_msg_per_query;
 
 extern void 		PPP_save_imsg(/*tPPP_MSG *imsg*/);
-int 				ppp_init(void);
+/*extern STATUS 		CLI_config_ppp_interval(U8 secs);
+extern STATUS 		CLI_config_ppp_msg_num_per_sec(U8 count);
+extern STATUS 		CLI_config_ppp_ttl(U16 secs);
+extern STATUS 		CLI_config_ppp_init_delay(U16 secs);
+extern void 		CLI_config_ppp_port(U16 port, BOOL enable);*/
+int 			ppp_init(void);
 
-int 				pppdInit(void);
-void 				PPP_bye(void);
-int 				control_plane(void);
+int pppdInit(void);
+void PPP_bye(void);
+int control_plane(void);
 
 /*-----------------------------------------
  * Queue between IF driver and daemon

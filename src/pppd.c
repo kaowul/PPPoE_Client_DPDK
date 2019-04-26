@@ -11,6 +11,7 @@
 #include 			<rte_ethdev.h>
 #include 			<rte_cycles.h>
 #include 			<rte_lcore.h>
+#include 			<rte_timer.h>
 #include 			<rte_ether.h>
 #include			"fsm.h"
 #include 			"dpdk_send_recv.h"
@@ -34,12 +35,16 @@ tIPC_ID 			pppQid_main = -1;
 struct rte_mempool 		*mbuf_pool;
 struct rte_ring 		*rte_ring;
 
+extern int timer_loop();
+
 uint16_t 				session_id;
 unsigned char 			*src_mac;
 unsigned char 			*dst_mac;
 unsigned char 			*user_id;
 unsigned char 			*passwd;
 uint8_t					data_plane_start;
+struct rte_timer		pppoe;
+struct rte_timer 		ppp;
 
 int main(int argc, char **argv)
 {
@@ -54,10 +59,10 @@ int main(int argc, char **argv)
 
 	int ret = rte_eal_init(argc-3,argv+3);
 	if (ret < 0)
-		rte_exit(EXIT_FAILURE, "initlize fail!");
+		rte_exit(EXIT_FAILURE, "rte initlize fail.");
 
-	if (rte_lcore_count() < 4)
-		rte_exit(EXIT_FAILURE, "We need at least 4 cores\n");
+	if (rte_lcore_count() < 5)
+		rte_exit(EXIT_FAILURE, "We need at least 5 cores.\n");
 
 	src_mac = (unsigned char *)malloc(ETH_ALEN);
 	dst_mac = (unsigned char *)malloc(ETH_ALEN);
@@ -86,12 +91,22 @@ int main(int argc, char **argv)
 			rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n",portid);
 	}
 
-	signal(SIGINT,PPP_bye);
+	signal(SIGTERM,PPP_bye);
 	data_plane_start = FALSE;
+
+	/* init RTE timer library */
+	rte_timer_subsystem_init();
+
+	/* init timer structures */
+	rte_timer_init(&pppoe);
+	rte_timer_init(&ppp);
 
 	rte_eal_remote_launch(ppp_recvd,NULL,1);
 	rte_eal_remote_launch(encapsulation,NULL,2);
 	rte_eal_remote_launch(control_plane,NULL,3);
+	rte_eal_remote_launch(timer_loop,NULL,4);
+	//rte_eal_remote_launch(gateway,NULL,5);
+
 	rte_eal_mp_wait_lcore();
     return 0;
 }
@@ -102,7 +117,7 @@ int control_plane(void)
 		return ERROR;
 	if (ppp_init() == ERROR)
 		return ERROR;
-	kill(getpid(), SIGINT);
+	kill(getpid(), SIGTERM);
 	return 0;
 }
 
@@ -159,12 +174,12 @@ int pppdInit(void)
  ***************************************************************/
 int ppp_init(void)
 {
-	extern STATUS		PPP_FSM(int cp, tPPP_PORT *port_ccb, U16 event, struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header, ppp_payload_t *ppp_payload, ppp_lcp_header_t *ppp_lcp, ppp_lcp_options_t *ppp_lcp_options);
-	tPPP_MBX			*mail;
+	extern STATUS		PPP_FSM(struct rte_timer *ppp, tPPP_PORT *port_ccb, U16 event);
+    tPPP_MBX			*mail;
 	tPPP_PORT			*ccb;
-	int					cp; //cp is "control protocol", means we need to determine cp after parsing packet
+	int 				cp;
 	uint16_t			event;
-	uint16_t			burst_size;
+	uint16_t			burst_size, max_retransmit = MAX_RETRAN;
 	uint16_t			recv_type;
 	struct ethhdr 		eth_hdr;
 	pppoe_header_t 		pppoe_header;
@@ -172,46 +187,85 @@ int ppp_init(void)
 	ppp_lcp_header_t	ppp_lcp;
 	ppp_lcp_options_t	*ppp_lcp_options = (ppp_lcp_options_t *)malloc(40*sizeof(char));
 	
-    if (build_padi() == FALSE) {
+    if (build_padi(&pppoe,&max_retransmit) == FALSE) {
     	free(ppp_lcp_options);
     	return ERROR;
     }
+    rte_timer_reset(&pppoe,rte_get_timer_hz(),PERIODICAL,4,build_padi,&max_retransmit);
     for(;;) {
     	mail = control_plane_dequeue(mail);
-		if (PPP_decode_frame(mail,&eth_hdr,&pppoe_header,&ppp_payload,&ppp_lcp,&ppp_lcp_options,&event) == FALSE)
+		if (PPP_decode_frame(mail,&eth_hdr,&pppoe_header,&ppp_payload,&ppp_lcp,&ppp_lcp_options,&event,&pppoe) == FALSE)
 			continue;
-		if (pppoe_recv(mail,&eth_hdr,&pppoe_header) == FALSE)
+		pppoe_phase_t pppoe_phase;
+		pppoe_phase.eth_hdr = &eth_hdr;
+		pppoe_phase.pppoe_header = &pppoe_header;
+		pppoe_phase.pppoe_header_tag = (pppoe_header_tag_t *)((pppoe_header_t *)((struct ethhdr *)mail->refp + 1) + 1);
+		pppoe_phase.max_retransmit = MAX_RETRAN;
+
+		switch(pppoe_header.code) {
+		case PADO:
+			rte_timer_stop(&pppoe);
+			memcpy(src_mac,eth_hdr.h_dest,6);
+			memcpy(dst_mac,eth_hdr.h_source,6);
+			if (build_padr(&pppoe,&pppoe_phase) == FALSE)
+				return ERROR;
+			rte_timer_reset(&pppoe,rte_get_timer_hz(),PERIODICAL,4,build_padr,&pppoe_phase);
 			continue;
-		if (pppoe_header.code == PADS)
+		case PADS:
+			rte_timer_stop(&pppoe);
+			session_id = pppoe_header.session_id;
 			break;
+		case PADT:
+			puts("Connection disconnected.");
+			return ERROR;
+		case PADM:
+			puts("recv active discovery message");
+			continue;
+		default:
+			puts("Unknown PPPoE discovery type.");
+			return ERROR;
+		}
+		break;
     }
-    PPP_FSM(0,&ppp_ports[0],E_OPEN,&eth_hdr,&pppoe_header,&ppp_payload,&ppp_lcp,ppp_lcp_options);
+    ppp_ports[0].cp = 0;
+    for (int i=0; i<2; i++) {
+    	ppp_ports[i].ppp_phase.eth_hdr = &eth_hdr;
+    	ppp_ports[i].ppp_phase.pppoe_header = &pppoe_header;
+    	ppp_ports[i].ppp_phase.ppp_payload = &ppp_payload;
+    	ppp_ports[i].ppp_phase.ppp_lcp = &ppp_lcp;
+    	ppp_ports[i].ppp_phase.ppp_lcp_options = ppp_lcp_options;
+    }
+    PPP_FSM(&ppp,&ppp_ports[0],E_OPEN);
     mail = NULL;
+    
 	for(;;){
 	    mail = control_plane_dequeue(mail);
-	    recv_type = *(uint16_t*)mail;
+	    recv_type = *(uint16_t *)mail;
 		
 		switch(recv_type){
 		case IPC_EV_TYPE_TMR:
 			break;
 		
 		case IPC_EV_TYPE_DRV:
-			if (PPP_decode_frame(mail,&eth_hdr,&pppoe_header,&ppp_payload,&ppp_lcp,&ppp_lcp_options,&event) == FALSE) {
+			if (PPP_decode_frame(mail,&eth_hdr,&pppoe_header,&ppp_payload,&ppp_lcp,&ppp_lcp_options,&event,&ppp) == FALSE) {
 				ppp_ports[0].err_imsg_cnt++;
 				continue;
 			}
+			ppp_ports[0].ppp_phase.ppp_lcp_options = ppp_lcp_options;
+			ppp_ports[1].ppp_phase.ppp_lcp_options = ppp_lcp_options;
 			if (ppp_payload.ppp_protocol == htons(AUTH_PROTOCOL)) {
 				if (ppp_lcp.code == AUTH_NAK) {
 					free(ppp_lcp_options);
 					return ERROR;
 				}
 				else if (ppp_lcp.code == AUTH_ACK) {
-					PPP_FSM(1,&ppp_ports[1],E_OPEN,&eth_hdr,&pppoe_header,&ppp_payload,&ppp_lcp,ppp_lcp_options);
+					ppp_ports[1].cp = 1;
+					PPP_FSM(&ppp,&ppp_ports[1],E_OPEN);
 					continue;
 				}
 			}
 			if (pppoe_header.code != SESSION_DATA) {
-				if (pppoe_recv(mail,&eth_hdr,&pppoe_header) == FALSE) {
+				if (is_padt(mail,&eth_hdr,&pppoe_header) == FALSE) {
 					if (build_padt(&eth_hdr,&pppoe_header) == FALSE) {
 						free(ppp_lcp_options);
 						return ERROR;
@@ -221,7 +275,8 @@ int ppp_init(void)
 				continue;
 			}
 			cp = (ppp_payload.ppp_protocol == htons(IPCP_PROTOCOL)) ? 1 : 0;
-			PPP_FSM(cp,&ppp_ports[cp],event,&eth_hdr,&pppoe_header,&ppp_payload,&ppp_lcp,ppp_lcp_options);
+			ppp_ports[cp].cp = cp;
+			PPP_FSM(&ppp,&ppp_ports[cp],event);
 			break;
 		case IPC_EV_TYPE_CLI:
 			break;

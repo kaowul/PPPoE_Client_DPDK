@@ -24,6 +24,7 @@ extern unsigned char 			*dst_mac;
 extern uint16_t		 			session_id;
 extern struct rte_mempool 		*mbuf_pool;
 extern struct rte_ring 			*rte_ring;
+extern uint32_t 				ipv4;
 
 static uint16_t nb_rxd = RX_RING_SIZE;
 static uint16_t nb_txd = TX_RING_SIZE;
@@ -80,16 +81,16 @@ int ppp_recvd(void)
 	struct rte_mbuf 	*single_pkt;
 	uint64_t 			total_tx;
 	struct ether_hdr 	*eth_hdr;
+	struct rte_mbuf 	*pkt[BURST_SIZE];
 	
 	for(;;) {
-		struct rte_mbuf *pkt[BURST_SIZE];
-
 		uint16_t nb_rx = rte_eth_rx_burst(1,0,pkt,BURST_SIZE);
 		if (nb_rx == 0)
 			continue;
 		total_tx = 0;
 		for(int i=0; i<nb_rx; i++) {
 			single_pkt = pkt[i];
+			rte_prefetch0(rte_pktmbuf_mtod(single_pkt, void *));
 			eth_hdr = rte_pktmbuf_mtod(single_pkt,struct ether_hdr*);
 			if (eth_hdr->ether_type != htons(0x8864) && eth_hdr->ether_type != htons(0x8863)) {
 				rte_pktmbuf_free(single_pkt);
@@ -117,7 +118,7 @@ int ppp_recvd(void)
 			single_pkt->data_len -= 8;
 			pkt[total_tx++] = single_pkt;
 		}
-		if (total_tx > 0) {
+		if (likely(total_tx > 0)) {
 			uint16_t nb_tx = rte_eth_tx_burst(0,0,pkt,total_tx);
 			if (unlikely(nb_tx < total_tx)) {
 				for(uint16_t buf=nb_tx; buf<total_tx; buf++)
@@ -148,28 +149,26 @@ int encapsulation(void)
 	uint64_t 			total_tx;
 	struct ether_hdr 	*eth_hdr;
 	pppoe_header_t 		*pppoe_header;
+	struct rte_mbuf 	*pkt[BURST_SIZE];
 
 	/*while(data_plane_start == FALSE);*/
 	for(;;) {
-		struct rte_mbuf *pkt[BURST_SIZE];
-
 		uint16_t nb_rx = rte_eth_rx_burst(0,0,pkt,BURST_SIZE);
 		if (nb_rx == 0)
 			continue;
 		total_tx = 0;
 		for(int i=0; i<nb_rx; i++) {
 			single_pkt = pkt[i];
+			rte_prefetch0(rte_pktmbuf_mtod(single_pkt, void *));
 			eth_hdr = rte_pktmbuf_mtod(single_pkt,struct ether_hdr*);
-
+			
 			memcpy(eth_hdr->s_addr.addr_bytes,src_mac,6);
 			memcpy(eth_hdr->d_addr.addr_bytes,dst_mac,6);
-			
 			uint16_t protocol = eth_hdr->ether_type;
 			eth_hdr->ether_type = htons(0x8864);
 			char *cur = (char *)eth_hdr - 8;
 			memcpy(cur,eth_hdr,14);
 			pppoe_header = (pppoe_header_t *)(cur+14);
-
 			pppoe_header->ver_type = 0x11;
 			pppoe_header->code = 0;
 			pppoe_header->session_id = session_id;
@@ -180,8 +179,7 @@ int encapsulation(void)
 			single_pkt->data_len += 8;
 			pkt[total_tx++] = single_pkt;
 		}
-
-		if (total_tx > 0) {
+		if (likely(total_tx > 0)) {
 			uint16_t nb_tx = rte_eth_tx_burst(1,0,pkt,total_tx);
 			if (unlikely(nb_tx < total_tx)) {
 				for(uint16_t buf=nb_tx; buf<total_tx; buf++)

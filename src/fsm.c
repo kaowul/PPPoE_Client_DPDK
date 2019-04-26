@@ -1,23 +1,23 @@
 #include    "fsm.h"
+#include 	"dpdk_header.h"
 
-static STATUS   A_this_layer_start(int cp, tPPP_PORT*, struct ethhdr *, pppoe_header_t *, ppp_payload_t *, ppp_lcp_header_t *, ppp_lcp_options_t *);
-static STATUS   A_send_config_request(int cp, tPPP_PORT*, struct ethhdr *, pppoe_header_t *, ppp_payload_t *, ppp_lcp_header_t *, ppp_lcp_options_t *);
-static STATUS   A_this_layer_finish(int cp, tPPP_PORT*, struct ethhdr *, pppoe_header_t *, ppp_payload_t *, ppp_lcp_header_t *, ppp_lcp_options_t *);
-static STATUS   A_send_terminate_ack(int cp, tPPP_PORT*, struct ethhdr *, pppoe_header_t *, ppp_payload_t *, ppp_lcp_header_t *, ppp_lcp_options_t *);
-static STATUS   A_send_code_reject(int cp, tPPP_PORT*, struct ethhdr *, pppoe_header_t *, ppp_payload_t *, ppp_lcp_header_t *, ppp_lcp_options_t *);
-static STATUS   A_create_down_event(int cp, tPPP_PORT*, struct ethhdr *, pppoe_header_t *, ppp_payload_t *, ppp_lcp_header_t *, ppp_lcp_options_t *);
-static STATUS   A_create_up_event(int cp, tPPP_PORT*, struct ethhdr *, pppoe_header_t *, ppp_payload_t *, ppp_lcp_header_t *, ppp_lcp_options_t *);
-//static int   A_init_restart_count(tPPP_PORT*, void*);
-static STATUS   A_send_config_ack(int cp, tPPP_PORT*, struct ethhdr *, pppoe_header_t *, ppp_payload_t *, ppp_lcp_header_t *, ppp_lcp_options_t *);
-static STATUS   A_send_config_nak_rej(int cp, tPPP_PORT*, struct ethhdr *, pppoe_header_t *, ppp_payload_t *, ppp_lcp_header_t *, ppp_lcp_options_t *);
-static STATUS   A_send_terminate_request(int cp, tPPP_PORT*, struct ethhdr *, pppoe_header_t *, ppp_payload_t *, ppp_lcp_header_t *, ppp_lcp_options_t *);
-static STATUS   A_this_layer_up(int cp, tPPP_PORT*, struct ethhdr *, pppoe_header_t *, ppp_payload_t *, ppp_lcp_header_t *, ppp_lcp_options_t *);
-static STATUS   A_this_layer_down(int cp, tPPP_PORT*, struct ethhdr *, pppoe_header_t *, ppp_payload_t *, ppp_lcp_header_t *, ppp_lcp_options_t *);
-static STATUS   A_init_restart_count(int cp, tPPP_PORT*, struct ethhdr *, pppoe_header_t *, ppp_payload_t *, ppp_lcp_header_t *, ppp_lcp_options_t *);
-static STATUS   A_send_echo_reply(int cp, tPPP_PORT*, struct ethhdr *, pppoe_header_t *, ppp_payload_t *, ppp_lcp_header_t *, ppp_lcp_options_t *);
-static STATUS   A_create_up_event(int cp, tPPP_PORT*, struct ethhdr *, pppoe_header_t *, ppp_payload_t *, ppp_lcp_header_t *, ppp_lcp_options_t *);
-static STATUS   A_create_down_event(int cp, tPPP_PORT*, struct ethhdr *, pppoe_header_t *, ppp_payload_t *, ppp_lcp_header_t *, ppp_lcp_options_t *);
-static STATUS   A_zero_restart_count(int cp, tPPP_PORT*, struct ethhdr *, pppoe_header_t *, ppp_payload_t *, ppp_lcp_header_t *, ppp_lcp_options_t *);
+static STATUS   A_this_layer_start();
+static STATUS   A_send_config_request();
+static STATUS   A_this_layer_finish();
+static STATUS   A_send_terminate_ack();
+static STATUS   A_send_code_reject();
+static STATUS   A_create_down_event();
+static STATUS   A_create_up_event();
+static STATUS   A_send_config_ack();
+static STATUS   A_send_config_nak_rej();
+static STATUS   A_send_terminate_request();
+static STATUS   A_this_layer_up();
+static STATUS   A_this_layer_down();
+static STATUS   A_init_restart_count();
+static STATUS   A_init_restart_config();
+static STATUS   A_init_restart_termin();
+static STATUS   A_send_echo_reply();
+static STATUS   A_zero_restart_count();
 
 tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = { 
 /*//////////////////////////////////////////////////////////////////////////////////
@@ -31,7 +31,7 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 { S_INIT, 			E_CLOSE,							      		S_INIT, 		    { 0 }},	                                                      	  
 
 /*---------------------------------------------------------------------------*/
-{ S_STARTING,		E_UP,     							    		S_REQUEST_SENT,	  	{ A_send_config_request, /*A_init_restart_count,*/ 0 }},
+{ S_STARTING,		E_UP,     							    		S_REQUEST_SENT,	  	{ A_send_config_request, A_init_restart_config, 0 }},
 
 { S_STARTING,		E_OPEN,    							    		S_STARTING,		    { 0 }},
 
@@ -41,7 +41,7 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 /*---------------------------------------------------------------------------*/
 { S_CLOSED,			E_DOWN, 							      		S_INIT,			    { 0 }},
 
-{ S_CLOSED,			E_OPEN, 							      		S_REQUEST_SENT,	  	{ A_send_config_request, /*A_init_restart_count,*/ 0 }},
+{ S_CLOSED,			E_OPEN, 							      		S_REQUEST_SENT,	  	{ A_send_config_request, A_init_restart_config, 0 }},
 
 { S_CLOSED,			E_CLOSE, 							      		S_CLOSED,		    { 0 }},
 
@@ -75,9 +75,9 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 
 { S_STOPPED,		E_CLOSE,     						   			S_CLOSED,		    { 0 }},
 
-{ S_STOPPED,		E_RECV_GOOD_CONFIG_REQUEST,						S_ACK_SENT,		    { A_init_restart_count, A_send_config_request, A_send_config_ack, 0 }},
+{ S_STOPPED,		E_RECV_GOOD_CONFIG_REQUEST,						S_ACK_SENT,		    { A_init_restart_config, A_send_config_request, A_send_config_ack, 0 }},
 
-{ S_STOPPED,		E_RECV_BAD_CONFIG_REQUEST, 						S_REQUEST_SENT,	  	{ A_init_restart_count, A_send_config_request, A_send_config_nak_rej, 0 }},
+{ S_STOPPED,		E_RECV_BAD_CONFIG_REQUEST, 						S_REQUEST_SENT,	  	{ A_init_restart_config, A_send_config_request, A_send_config_nak_rej, 0 }},
 	
 { S_STOPPED,		E_RECV_CONFIG_ACK, 				 				S_STOPPED,		    { A_send_terminate_ack, 0 }},
 
@@ -171,7 +171,7 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 
 { S_REQUEST_SENT, 	E_OPEN,											S_REQUEST_SENT, 	{ 0 }},
 
-{ S_REQUEST_SENT, 	E_CLOSE,										S_CLOSING, 			{ A_init_restart_count, A_send_terminate_request, 0 }},
+{ S_REQUEST_SENT, 	E_CLOSE,										S_CLOSING, 			{ A_init_restart_termin, A_send_terminate_request, 0 }},
 
 { S_REQUEST_SENT, 	E_TIMEOUT_COUNTER_POSITIVE,						S_REQUEST_SENT, 	{ A_send_config_request, 0 }},
 
@@ -184,7 +184,7 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 
 { S_REQUEST_SENT, 	E_RECV_CONFIG_ACK,								S_ACK_RECEIVED,		{ A_init_restart_count, 0 }},
 
-{ S_REQUEST_SENT, 	E_RECV_CONFIG_NAK_REJ,							S_REQUEST_SENT,		{ A_init_restart_count, A_send_config_request, 0 }},
+{ S_REQUEST_SENT, 	E_RECV_CONFIG_NAK_REJ,							S_REQUEST_SENT,		{ A_init_restart_config, A_send_config_request, 0 }},
 
 { S_REQUEST_SENT, 	E_RECV_TERMINATE_REQUEST,						S_REQUEST_SENT,		{ A_send_terminate_ack, 0 }},
 
@@ -203,11 +203,11 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 
 { S_ACK_RECEIVED, 	E_OPEN,											S_ACK_RECEIVED, 	{ 0 }},
 
-{ S_ACK_RECEIVED, 	E_CLOSE,										S_CLOSING, 			{ A_init_restart_count, A_send_terminate_request, 0 }},
+{ S_ACK_RECEIVED, 	E_CLOSE,										S_CLOSING, 			{ A_init_restart_termin, A_send_terminate_request, 0 }},
 
 { S_ACK_RECEIVED, 	E_TIMEOUT_COUNTER_POSITIVE,						S_REQUEST_SENT, 	{ A_send_config_request, 0 }},
 
-/* may be with "PASSIVE" option, with this option, ppp will not exit but then just wait for a valid LCP packet from peer if there is not received form peer */
+/* may be with "PASSIVE" option, with this option, ppp will not exit but then just wait for a valid LCP packet from peer if there is not received from peer */
 { S_ACK_RECEIVED, 	E_TIMEOUT_COUNTER_EXPIRED,						S_STOPPED, 			{ A_this_layer_finish, 0 }},
 
 { S_ACK_RECEIVED, 	E_RECV_GOOD_CONFIG_REQUEST,						S_OPENED,			{ A_send_config_ack, A_this_layer_up, 0 }},
@@ -240,7 +240,7 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 
 { S_ACK_SENT, 		E_OPEN,											S_ACK_SENT, 		{ 0 }},
 
-{ S_ACK_SENT, 		E_CLOSE,										S_CLOSING, 			{ A_init_restart_count, A_send_terminate_request, 0 }},
+{ S_ACK_SENT, 		E_CLOSE,										S_CLOSING, 			{ A_init_restart_termin, A_send_terminate_request, 0 }},
 	
 { S_ACK_SENT, 		E_TIMEOUT_COUNTER_POSITIVE,						S_ACK_SENT, 		{ A_send_config_request, 0 }},
 
@@ -253,7 +253,7 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 
 { S_ACK_SENT, 		E_RECV_CONFIG_ACK,								S_OPENED,			{ A_init_restart_count, A_this_layer_up, 0 }},
 
-{ S_ACK_SENT, 		E_RECV_CONFIG_NAK_REJ,							S_ACK_SENT,			{ A_init_restart_count, A_send_config_request, 0 }},
+{ S_ACK_SENT, 		E_RECV_CONFIG_NAK_REJ,							S_ACK_SENT,			{ A_init_restart_config, A_send_config_request, 0 }},
 
 { S_ACK_SENT, 		E_RECV_TERMINATE_REQUEST,						S_REQUEST_SENT,		{ A_send_terminate_ack, 0 }},
 
@@ -272,7 +272,7 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 
 { S_OPENED, 		E_OPEN,											S_OPENED, 			{ A_create_down_event, A_create_up_event, 0 }},
 
-{ S_OPENED, 		E_CLOSE,										S_CLOSING, 			{ A_this_layer_down, A_init_restart_count, A_send_terminate_request, 0 }},
+{ S_OPENED, 		E_CLOSE,										S_CLOSING, 			{ A_this_layer_down, A_init_restart_termin, A_send_terminate_request, 0 }},
 
 { S_OPENED, 		E_RECV_GOOD_CONFIG_REQUEST,						S_ACK_SENT,			{ A_this_layer_down, A_send_config_request, A_send_config_ack, 0 }},
 
@@ -295,7 +295,7 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 
 { S_OPENED, 		E_RECV_GOOD_CODE_PROTOCOL_REJECT,				S_OPENED,			{ 0 }},
 
-{ S_OPENED, 		E_RECV_BAD_CODE_PROTOCOL_REJECT,				S_STOPPING,			{ A_this_layer_down, A_init_restart_count, A_send_terminate_request, 0 }},
+{ S_OPENED, 		E_RECV_BAD_CODE_PROTOCOL_REJECT,				S_STOPPING,			{ A_this_layer_down, A_init_restart_termin, A_send_terminate_request, 0 }},
 
 { S_OPENED, 		E_RECV_ECHO_REPLY_REQUEST_DISCARD_REQUEST,		S_OPENED,			{ A_send_echo_reply, 0 }},
 
@@ -309,7 +309,7 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 { S_INIT, 			E_CLOSE,							      		S_INIT, 		    { 0 }},	                                                      	  
 
 /*---------------------------------------------------------------------------*/
-{ S_STARTING,		E_UP,     							    		S_REQUEST_SENT,	  	{ A_send_config_request, /*A_init_restart_count,*/ 0 }},
+{ S_STARTING,		E_UP,     							    		S_REQUEST_SENT,	  	{ A_send_config_request, A_init_restart_config, 0 }},
 
 { S_STARTING,		E_OPEN,    							    		S_STARTING,		    { 0 }},
 
@@ -319,7 +319,7 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 /*---------------------------------------------------------------------------*/
 { S_CLOSED,			E_DOWN, 							      		S_INIT,			    { 0 }},
 
-{ S_CLOSED,			E_OPEN, 							      		S_REQUEST_SENT,	  	{ A_send_config_request, /*A_init_restart_count,*/ 0 }},
+{ S_CLOSED,			E_OPEN, 							      		S_REQUEST_SENT,	  	{ A_send_config_request, A_init_restart_config, 0 }},
 
 { S_CLOSED,			E_CLOSE, 							      		S_CLOSED,		    { 0 }},
 
@@ -353,9 +353,9 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 
 { S_STOPPED,		E_CLOSE,     						   			S_CLOSED,		    { 0 }},
 
-{ S_STOPPED,		E_RECV_GOOD_CONFIG_REQUEST,						S_ACK_SENT,		    { A_init_restart_count, A_send_config_request, A_send_config_ack, 0 }},
+{ S_STOPPED,		E_RECV_GOOD_CONFIG_REQUEST,						S_ACK_SENT,		    { A_init_restart_config, A_send_config_request, A_send_config_ack, 0 }},
 
-{ S_STOPPED,		E_RECV_BAD_CONFIG_REQUEST, 						S_REQUEST_SENT,	  	{ A_init_restart_count, A_send_config_request, A_send_config_nak_rej, 0 }},
+{ S_STOPPED,		E_RECV_BAD_CONFIG_REQUEST, 						S_REQUEST_SENT,	  	{ A_init_restart_config, A_send_config_request, A_send_config_nak_rej, 0 }},
 
 { S_STOPPED,		E_RECV_CONFIG_ACK, 				 				S_STOPPED,		    { A_send_terminate_ack, 0 }},
 
@@ -449,7 +449,7 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 
 { S_REQUEST_SENT, E_OPEN,							S_REQUEST_SENT, { 0 }},
 
-{ S_REQUEST_SENT, E_CLOSE,							S_CLOSING, 		{ A_init_restart_count, A_send_terminate_request, 0 }},
+{ S_REQUEST_SENT, E_CLOSE,							S_CLOSING, 		{ A_init_restart_termin, A_send_terminate_request, 0 }},
 
 { S_REQUEST_SENT, E_TIMEOUT_COUNTER_POSITIVE,		S_REQUEST_SENT, { A_send_config_request, 0 }},
 
@@ -462,7 +462,7 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 
 { S_REQUEST_SENT, E_RECV_CONFIG_ACK,				S_ACK_RECEIVED,	{ A_init_restart_count, 0 }},
 
-{ S_REQUEST_SENT, E_RECV_CONFIG_NAK_REJ,			S_REQUEST_SENT,	{ A_init_restart_count, A_send_config_request, 0 }},
+{ S_REQUEST_SENT, E_RECV_CONFIG_NAK_REJ,			S_REQUEST_SENT,	{ A_init_restart_config, A_send_config_request, 0 }},
 
 { S_REQUEST_SENT, E_RECV_TERMINATE_REQUEST,			S_REQUEST_SENT,	{ A_send_terminate_ack, 0 }},
 
@@ -481,7 +481,7 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 
 { S_ACK_RECEIVED, E_OPEN,							S_ACK_RECEIVED, { 0 }},
 
-{ S_ACK_RECEIVED, E_CLOSE,							S_CLOSING, 		{ A_init_restart_count, A_send_terminate_request, 0 }},
+{ S_ACK_RECEIVED, E_CLOSE,							S_CLOSING, 		{ A_init_restart_termin, A_send_terminate_request, 0 }},
 
 { S_ACK_RECEIVED, E_TIMEOUT_COUNTER_POSITIVE,		S_REQUEST_SENT, { A_send_config_request, 0 }},
 
@@ -518,7 +518,7 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 
 { S_ACK_SENT, 	E_OPEN,								S_ACK_SENT, 	{ 0 }},
 
-{ S_ACK_SENT, 	E_CLOSE,							S_CLOSING, 		{ A_init_restart_count, A_send_terminate_request, 0 }},
+{ S_ACK_SENT, 	E_CLOSE,							S_CLOSING, 		{ A_init_restart_termin, A_send_terminate_request, 0 }},
 	
 { S_ACK_SENT, 	E_TIMEOUT_COUNTER_POSITIVE,			S_ACK_SENT, 	{ A_send_config_request, 0 }},
 
@@ -531,7 +531,7 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 
 { S_ACK_SENT, 	E_RECV_CONFIG_ACK,					S_OPENED,		{ A_init_restart_count, A_this_layer_up, 0 }},
 
-{ S_ACK_SENT, 	E_RECV_CONFIG_NAK_REJ,				S_ACK_SENT,		{ A_init_restart_count, A_send_config_request, 0 }},
+{ S_ACK_SENT, 	E_RECV_CONFIG_NAK_REJ,				S_ACK_SENT,		{ A_init_restart_config, A_send_config_request, 0 }},
 
 { S_ACK_SENT, 	E_RECV_TERMINATE_REQUEST,			S_REQUEST_SENT,	{ A_send_terminate_ack, 0 }},
 
@@ -550,7 +550,7 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 
 { S_OPENED, 	E_OPEN,								S_OPENED, 		{ A_create_down_event, A_create_up_event, 0 }},
 
-{ S_OPENED, 	E_CLOSE,							S_CLOSING, 		{ A_this_layer_down, A_init_restart_count, A_send_terminate_request, 0 }},
+{ S_OPENED, 	E_CLOSE,							S_CLOSING, 		{ A_this_layer_down, A_init_restart_termin, A_send_terminate_request, 0 }},
 
 { S_OPENED, 	E_RECV_GOOD_CONFIG_REQUEST,			S_ACK_SENT,		{ A_this_layer_down, A_send_config_request, A_send_config_ack, 0 }},
 
@@ -573,7 +573,7 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
 
 { S_OPENED, 	E_RECV_GOOD_CODE_PROTOCOL_REJECT,	S_OPENED,		{ 0 }},
 
-{ S_OPENED, 	E_RECV_BAD_CODE_PROTOCOL_REJECT,	S_STOPPING,		{ A_this_layer_down, A_init_restart_count, A_send_terminate_request, 0 }},
+{ S_OPENED, 	E_RECV_BAD_CODE_PROTOCOL_REJECT,	S_STOPPING,		{ A_this_layer_down, A_init_restart_termin, A_send_terminate_request, 0 }},
 
 { S_OPENED, 	E_RECV_ECHO_REPLY_REQUEST_DISCARD_REQUEST, S_OPENED,{ A_send_echo_reply, 0 }},
 
@@ -589,7 +589,7 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
  *           arg - signal(primitive) or pdu
  * return  : error status
  ***********************************************************************/
-STATUS PPP_FSM(int cp, tPPP_PORT *port_ccb, U16 event, /*void *arg,*/ struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header, ppp_payload_t *ppp_payload, ppp_lcp_header_t *ppp_lcp, ppp_lcp_options_t *ppp_lcp_options)
+STATUS PPP_FSM(struct rte_timer *ppp, tPPP_PORT *port_ccb, U16 event)
 {	
     register int  	i,j;
     int			    retval;
@@ -599,12 +599,12 @@ STATUS PPP_FSM(int cp, tPPP_PORT *port_ccb, U16 event, /*void *arg,*/ struct eth
     }
     
     /* Find a matched state */
-    for(i=0; ppp_fsm_tbl[cp][i].state!=S_INVLD; i++)
-        if (ppp_fsm_tbl[cp][i].state == port_ccb->state)
+    for(i=0; ppp_fsm_tbl[port_ccb->cp][i].state!=S_INVLD; i++)
+        if (ppp_fsm_tbl[port_ccb->cp][i].state == port_ccb->state)
             break;
-    printf("cur state = %x, control protocol = %d\n", ppp_fsm_tbl[cp][i].state, cp);
+    printf("cur state = %x, control protocol = %d\n", ppp_fsm_tbl[port_ccb->cp][i].state, port_ccb->cp);
 
-    if (ppp_fsm_tbl[cp][i].state == S_INVLD) {
+    if (ppp_fsm_tbl[port_ccb->cp][i].state == S_INVLD) {
         return FALSE;
     }
 
@@ -612,21 +612,22 @@ STATUS PPP_FSM(int cp, tPPP_PORT *port_ccb, U16 event, /*void *arg,*/ struct eth
      * Find a matched event in a specific state.
      * Note : a state can accept several events.
      */
-    for(;ppp_fsm_tbl[cp][i].state==port_ccb->state; i++)
-        if (ppp_fsm_tbl[cp][i].event == event)
+    for(;ppp_fsm_tbl[port_ccb->cp][i].state==port_ccb->state; i++)
+        if (ppp_fsm_tbl[port_ccb->cp][i].event == event)
             break;
     
-    if (ppp_fsm_tbl[cp][i].state != port_ccb->state) { /* search until meet the next state */
+    if (ppp_fsm_tbl[port_ccb->cp][i].state != port_ccb->state) { /* search until meet the next state */
   		return TRUE; /* still pass to endpoint */
     }
     
     /* Correct state found */
-    if (port_ccb->state != ppp_fsm_tbl[cp][i].next_state) {
-        port_ccb->state = ppp_fsm_tbl[cp][i].next_state;
+    if (port_ccb->state != ppp_fsm_tbl[port_ccb->cp][i].next_state) {
+        port_ccb->state = ppp_fsm_tbl[port_ccb->cp][i].next_state;
     }
     
-    for(j=0; ppp_fsm_tbl[cp][i].hdl[j]; j++) {
-       	retval = (*ppp_fsm_tbl[cp][i].hdl[j])(cp,port_ccb,eth_hdr,pppoe_header,ppp_payload,ppp_lcp,ppp_lcp_options);
+    for(j=0; ppp_fsm_tbl[port_ccb->cp][i].hdl[j]; j++) {
+    	port_ccb->ppp_phase.timer_counter = 10;
+       	retval = (*ppp_fsm_tbl[port_ccb->cp][i].hdl[j])(ppp,port_ccb);
        	if (!retval)  
             return TRUE;
     }
@@ -634,32 +635,32 @@ STATUS PPP_FSM(int cp, tPPP_PORT *port_ccb, U16 event, /*void *arg,*/ struct eth
 }
 
 /* this layer up/down/start/finish */
-STATUS A_this_layer_start(int cp, tPPP_PORT *port_ccb, struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header, ppp_payload_t *ppp_payload, ppp_lcp_header_t *ppp_lcp, ppp_lcp_options_t *ppp_lcp_options)
+STATUS A_this_layer_start(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
 {
-    PPP_FSM(cp,port_ccb,E_UP,eth_hdr,pppoe_header,ppp_payload,ppp_lcp,ppp_lcp_options);
+    PPP_FSM(tim,port_ccb,E_UP);
 
     return TRUE;
 }
 
-STATUS A_this_layer_finish(int cp, tPPP_PORT *port_ccb, struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header, ppp_payload_t *ppp_payload, ppp_lcp_header_t *ppp_lcp, ppp_lcp_options_t *ppp_lcp_options)
+STATUS A_this_layer_finish(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
 {
-    PPP_FSM(cp,port_ccb,E_DOWN,eth_hdr,pppoe_header,ppp_payload,ppp_lcp,ppp_lcp_options);
+    PPP_FSM(tim,port_ccb,E_DOWN);
 
     return TRUE;
 }
 
-STATUS A_this_layer_up(int cp, tPPP_PORT *port_ccb, struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header, ppp_payload_t *ppp_payload, ppp_lcp_header_t *ppp_lcp, ppp_lcp_options_t *ppp_lcp_options)
+STATUS A_this_layer_up(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
 {
 	unsigned char buffer[MSG_BUF];
     uint16_t mulen;
 
-	if (ppp_payload->ppp_protocol == htons(LCP_PROTOCOL)) {
+	if (port_ccb->ppp_phase.ppp_payload->ppp_protocol == htons(LCP_PROTOCOL)) {
     	memset(buffer,0,MSG_BUF);
-    	if (build_auth_request_pap(buffer,eth_hdr,pppoe_header,ppp_payload,ppp_lcp,ppp_lcp_options,&mulen) < 0)
+    	if (build_auth_request_pap(buffer,port_ccb,&mulen) < 0)
     		return FALSE;
     	drv_xmit(buffer,mulen);
     }
-    else if (ppp_payload->ppp_protocol == htons(IPCP_PROTOCOL)) {
+    else if (port_ccb->ppp_phase.ppp_payload->ppp_protocol == htons(IPCP_PROTOCOL)) {
     	data_plane_start = TRUE;
     	puts("start to send data via pppoe session.");
     }
@@ -668,98 +669,130 @@ STATUS A_this_layer_up(int cp, tPPP_PORT *port_ccb, struct ethhdr *eth_hdr, pppo
     return TRUE;
 }
 
-STATUS A_this_layer_down(int cp, tPPP_PORT *port_ccb, struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header, ppp_payload_t *ppp_payload, ppp_lcp_header_t *ppp_lcp, ppp_lcp_options_t *ppp_lcp_options)
+STATUS A_this_layer_down(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
 {
     printf("this layer down\n");
 
     return TRUE;
 }
 
-STATUS A_init_restart_count(int cp, tPPP_PORT *port_ccb, struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header, ppp_payload_t *ppp_payload, ppp_lcp_header_t *ppp_lcp, ppp_lcp_options_t *ppp_lcp_options)
+STATUS A_init_restart_count(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
 {
     printf("init restart count\n");
+    
+    return TRUE;
+}
+
+STATUS A_init_restart_config(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+{
+    printf("init config req timer start\n");
+    rte_timer_stop(tim);
+    port_ccb->ppp_phase.timer_counter = 9;
+	rte_timer_reset(tim,3*rte_get_timer_hz(),PERIODICAL,4,A_send_config_request,port_ccb);
 
     return TRUE;
 }
 
-STATUS A_send_config_request(int cp, tPPP_PORT *port_ccb, struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header, ppp_payload_t *ppp_payload, ppp_lcp_header_t *ppp_lcp, ppp_lcp_options_t *ppp_lcp_options)
+STATUS A_init_restart_termin(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+{
+    printf("init termin req timer start\n");
+    rte_timer_stop(tim);
+    port_ccb->ppp_phase.timer_counter = 9;
+	rte_timer_reset(tim,3*rte_get_timer_hz(),PERIODICAL,4,A_send_terminate_request,port_ccb);
+
+    return TRUE;
+}
+
+STATUS A_send_config_request(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
 {
     unsigned char buffer[MSG_BUF];
     uint16_t mulen;
 
-    if (build_config_request(cp,buffer,eth_hdr,pppoe_header,ppp_payload,ppp_lcp,ppp_lcp_options,&mulen) < 0)
+    if (port_ccb->ppp_phase.timer_counter == 0) {
+    	rte_timer_stop(tim);
+    	puts("config request timeout.");
+    	PPP_FSM(tim,port_ccb,E_TIMEOUT_COUNTER_EXPIRED);
+    }
+    if (build_config_request(buffer,port_ccb,&mulen) < 0)
+        return FALSE;
+    drv_xmit(buffer,mulen);
+    port_ccb->ppp_phase.timer_counter--;
+    
+    return TRUE;
+}
+
+STATUS A_send_config_nak_rej(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+{
+    unsigned char buffer[MSG_BUF];
+    uint16_t mulen;
+
+    if (build_config_nak_rej(buffer,port_ccb,&mulen) < 0)
         return FALSE;
     drv_xmit(buffer,mulen);
 
     return TRUE;
 }
 
-STATUS A_send_config_nak_rej(int cp, tPPP_PORT *port_ccb, struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header, ppp_payload_t *ppp_payload, ppp_lcp_header_t *ppp_lcp, ppp_lcp_options_t *ppp_lcp_options)
+STATUS A_send_config_ack(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
 {
     unsigned char buffer[MSG_BUF];
     uint16_t mulen;
 
-    if (build_config_nak_rej(cp,buffer,eth_hdr,pppoe_header,ppp_payload,ppp_lcp,ppp_lcp_options,&mulen) < 0)
+    if (build_config_ack(buffer,port_ccb,&mulen) < 0)
         return FALSE;
     drv_xmit(buffer,mulen);
 
     return TRUE;
 }
 
-STATUS A_send_config_ack(int cp, tPPP_PORT *port_ccb, struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header, ppp_payload_t *ppp_payload, ppp_lcp_header_t *ppp_lcp, ppp_lcp_options_t *ppp_lcp_options)
+STATUS A_send_terminate_request(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
 {
     unsigned char buffer[MSG_BUF];
     uint16_t mulen;
 
-    if (build_config_ack(cp,buffer,eth_hdr,pppoe_header,ppp_payload,ppp_lcp,ppp_lcp_options,&mulen) < 0)
+    if (port_ccb->ppp_phase.timer_counter == 0) {
+    	rte_timer_stop(tim);
+    	puts("config request timeout.");
+    	PPP_FSM(tim,port_ccb,E_TIMEOUT_COUNTER_EXPIRED);
+    }
+    if (build_terminate_request(buffer,port_ccb,&mulen) < 0)
+        return FALSE;
+    drv_xmit(buffer,mulen);
+    port_ccb->ppp_phase.timer_counter--;
+    
+    return TRUE;
+}
+
+STATUS A_send_terminate_ack(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+{
+    unsigned char buffer[MSG_BUF];
+    uint16_t mulen;
+
+    if (build_terminate_ack(buffer,port_ccb,&mulen) < 0)
         return FALSE;
     drv_xmit(buffer,mulen);
 
     return TRUE;
 }
 
-STATUS A_send_terminate_request(int cp, tPPP_PORT *port_ccb, struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header, ppp_payload_t *ppp_payload, ppp_lcp_header_t *ppp_lcp, ppp_lcp_options_t *ppp_lcp_options)
+STATUS A_send_code_reject(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
 {
     unsigned char buffer[MSG_BUF];
     uint16_t mulen;
 
-    if (build_terminate_request(cp,buffer,eth_hdr,pppoe_header,ppp_payload,ppp_lcp,ppp_lcp_options,&mulen) < 0)
+    if (build_code_reject(buffer,port_ccb,&mulen) < 0)
         return FALSE;
     drv_xmit(buffer,mulen);
 
     return TRUE;
 }
 
-STATUS A_send_terminate_ack(int cp, tPPP_PORT *port_ccb, struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header, ppp_payload_t *ppp_payload, ppp_lcp_header_t *ppp_lcp, ppp_lcp_options_t *ppp_lcp_options)
+STATUS A_send_echo_reply(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
 {
     unsigned char buffer[MSG_BUF];
     uint16_t mulen;
 
-    if (build_terminate_ack(cp,buffer,eth_hdr,pppoe_header,ppp_payload,ppp_lcp,ppp_lcp_options,&mulen) < 0)
-        return FALSE;
-    drv_xmit(buffer,mulen);
-
-    return TRUE;
-}
-
-STATUS A_send_code_reject(int cp, tPPP_PORT *port_ccb, struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header, ppp_payload_t *ppp_payload, ppp_lcp_header_t *ppp_lcp, ppp_lcp_options_t *ppp_lcp_options)
-{
-    unsigned char buffer[MSG_BUF];
-    uint16_t mulen;
-
-    if (build_code_reject(cp,buffer,eth_hdr,pppoe_header,ppp_payload,ppp_lcp,ppp_lcp_options,&mulen) < 0)
-        return FALSE;
-    drv_xmit(buffer,mulen);
-
-    return TRUE;
-}
-
-STATUS A_send_echo_reply(int cp, tPPP_PORT *port_ccb, struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header, ppp_payload_t *ppp_payload, ppp_lcp_header_t *ppp_lcp, ppp_lcp_options_t *ppp_lcp_options)
-{
-    unsigned char buffer[MSG_BUF];
-    uint16_t mulen;
-
-    if (build_echo_reply(buffer,eth_hdr,pppoe_header,ppp_payload,ppp_lcp,ppp_lcp_options,&mulen) < 0)
+    if (build_echo_reply(buffer,port_ccb,&mulen) < 0)
         return FALSE;
     drv_xmit(buffer,mulen);
     printf("send echo reply\n");
@@ -767,21 +800,21 @@ STATUS A_send_echo_reply(int cp, tPPP_PORT *port_ccb, struct ethhdr *eth_hdr, pp
     return TRUE;
 }
 
-STATUS A_create_up_event(int cp, tPPP_PORT *port_ccb, struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header, ppp_payload_t *ppp_payload, ppp_lcp_header_t *ppp_lcp, ppp_lcp_options_t *ppp_lcp_options)
+STATUS A_create_up_event(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
 {
     printf("create up event\n");
 
     return TRUE;
 }
 
-STATUS A_create_down_event(int cp, tPPP_PORT *port_ccb, struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header, ppp_payload_t *ppp_payload, ppp_lcp_header_t *ppp_lcp, ppp_lcp_options_t *ppp_lcp_options)
+STATUS A_create_down_event(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
 {
     printf("create down event\n");
 
     return TRUE;
 }
 
-STATUS A_zero_restart_count(int cp, tPPP_PORT *port_ccb, struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header, ppp_payload_t *ppp_payload, ppp_lcp_header_t *ppp_lcp, ppp_lcp_options_t *ppp_lcp_options)
+STATUS A_zero_restart_count(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
 {
     printf("zero restart count\n");
 
