@@ -10,6 +10,7 @@
 #define LCP_PHASE			0x2
 #define AUTH_PHASE			0x3
 #define IPCP_PHASE			0x4
+#define END_PHASE			0x0
 
 #define END_OF_LIST 		0x0
 #define SERVICE_NAME 		0x0101
@@ -72,7 +73,5 @@ pppoe_header_t* create_padi(struct ethhdr *eth_hdr);
 int raw_sock_receive(char if_name[], uint8_t code, unsigned char *buffer);
 pppoe_header_t* create_padr(struct ethhdr *eth_hdr, unsigned char *tmp_buf);
 pppoe_header_t* create_padt(struct ethhdr *eth_hdr);
-//STATUS pppoe_recv(tPPP_MBX *mail, struct ethhdr *eth_hdr, pppoe_header_t *pppoe_header);
 
-//extern void PPP_bye();
 extern uint8_t data_plane_start;

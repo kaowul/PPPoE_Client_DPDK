@@ -20,8 +20,7 @@ int timer_loop(__attribute__((unused)) void *arg);
 
 extern struct rte_timer		pppoe;
 
-__attribute__((noreturn)) int
-timer_loop(__attribute__((unused)) void *arg)
+__attribute__((noreturn)) int timer_loop(__attribute__((unused)) void *arg)
 {
 	uint64_t prev_tsc = 0, cur_tsc, diff_tsc;
 

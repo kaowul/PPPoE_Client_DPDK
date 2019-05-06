@@ -16,7 +16,7 @@ typedef struct{
     U8   	state;
     U16   	event;
     U8   	next_state;
-    STATUS 	(*hdl[10])(__attribute__((unused)) struct rte_timer *, tPPP_PORT *);
+    STATUS 	(*hdl[10])(struct rte_timer *, tPPP_PORT *);
 } tPPP_STATE_TBL;
 
 /*--------- STATE TYPE ----------*/

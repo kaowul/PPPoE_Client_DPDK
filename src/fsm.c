@@ -1,23 +1,24 @@
 #include    "fsm.h"
 #include 	"dpdk_header.h"
+#include 	<inttypes.h>
 
-static STATUS   A_this_layer_start();
-static STATUS   A_send_config_request();
-static STATUS   A_this_layer_finish();
-static STATUS   A_send_terminate_ack();
-static STATUS   A_send_code_reject();
-static STATUS   A_create_down_event();
-static STATUS   A_create_up_event();
-static STATUS   A_send_config_ack();
-static STATUS   A_send_config_nak_rej();
-static STATUS   A_send_terminate_request();
-static STATUS   A_this_layer_up();
-static STATUS   A_this_layer_down();
-static STATUS   A_init_restart_count();
-static STATUS   A_init_restart_config();
-static STATUS   A_init_restart_termin();
-static STATUS   A_send_echo_reply();
-static STATUS   A_zero_restart_count();
+static STATUS   A_this_layer_start(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb);
+static STATUS   A_send_config_request(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb);
+static STATUS   A_this_layer_finish(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb);
+static STATUS   A_send_terminate_ack(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb);
+static STATUS   A_send_code_reject(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb);
+static STATUS   A_create_down_event(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb);
+static STATUS   A_create_up_event(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb);
+static STATUS   A_send_config_ack(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb);
+static STATUS   A_send_config_nak_rej(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb);
+static STATUS   A_send_terminate_request(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb);
+static STATUS   A_this_layer_up(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb);
+static STATUS   A_this_layer_down(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb);
+static STATUS   A_init_restart_count(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb);
+static STATUS   A_init_restart_config(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb);
+static STATUS   A_init_restart_termin(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb);
+static STATUS   A_send_echo_reply(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb);
+static STATUS   A_zero_restart_count(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb);
 
 tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = { 
 /*//////////////////////////////////////////////////////////////////////////////////
@@ -584,9 +585,9 @@ tPPP_STATE_TBL  ppp_fsm_tbl[2][121] = {
  * PPP_FSM
  *
  * purpose : finite state machine.
- * input   : tnnl - tunnel pointer
+ * input   : ppp - timer
+ *			 port_ccb - user connection info.
  *           event -
- *           arg - signal(primitive) or pdu
  * return  : error status
  ***********************************************************************/
 STATUS PPP_FSM(struct rte_timer *ppp, tPPP_PORT *port_ccb, U16 event)
@@ -600,7 +601,7 @@ STATUS PPP_FSM(struct rte_timer *ppp, tPPP_PORT *port_ccb, U16 event)
     
     /* Find a matched state */
     for(i=0; ppp_fsm_tbl[port_ccb->cp][i].state!=S_INVLD; i++)
-        if (ppp_fsm_tbl[port_ccb->cp][i].state == port_ccb->state)
+        if (ppp_fsm_tbl[port_ccb->cp][i].state == port_ccb->ppp_phase[port_ccb->cp].state)
             break;
     printf("cur state = %x, control protocol = %d\n", ppp_fsm_tbl[port_ccb->cp][i].state, port_ccb->cp);
 
@@ -612,21 +613,21 @@ STATUS PPP_FSM(struct rte_timer *ppp, tPPP_PORT *port_ccb, U16 event)
      * Find a matched event in a specific state.
      * Note : a state can accept several events.
      */
-    for(;ppp_fsm_tbl[port_ccb->cp][i].state==port_ccb->state; i++)
+    for(;ppp_fsm_tbl[port_ccb->cp][i].state==port_ccb->ppp_phase[port_ccb->cp].state; i++)
         if (ppp_fsm_tbl[port_ccb->cp][i].event == event)
             break;
     
-    if (ppp_fsm_tbl[port_ccb->cp][i].state != port_ccb->state) { /* search until meet the next state */
+    if (ppp_fsm_tbl[port_ccb->cp][i].state != port_ccb->ppp_phase[port_ccb->cp].state) { /* search until meet the next state */
   		return TRUE; /* still pass to endpoint */
     }
     
     /* Correct state found */
-    if (port_ccb->state != ppp_fsm_tbl[port_ccb->cp][i].next_state) {
-        port_ccb->state = ppp_fsm_tbl[port_ccb->cp][i].next_state;
+    if (port_ccb->ppp_phase[port_ccb->cp].state != ppp_fsm_tbl[port_ccb->cp][i].next_state) {
+        port_ccb->ppp_phase[port_ccb->cp].state = ppp_fsm_tbl[port_ccb->cp][i].next_state;
     }
     
     for(j=0; ppp_fsm_tbl[port_ccb->cp][i].hdl[j]; j++) {
-    	port_ccb->ppp_phase.timer_counter = 10;
+    	port_ccb->ppp_phase[port_ccb->cp].timer_counter = 10;
        	retval = (*ppp_fsm_tbl[port_ccb->cp][i].hdl[j])(ppp,port_ccb);
        	if (!retval)  
             return TRUE;
@@ -635,80 +636,81 @@ STATUS PPP_FSM(struct rte_timer *ppp, tPPP_PORT *port_ccb, U16 event)
 }
 
 /* this layer up/down/start/finish */
-STATUS A_this_layer_start(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+STATUS A_this_layer_start(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb)
 {
     PPP_FSM(tim,port_ccb,E_UP);
 
     return TRUE;
 }
 
-STATUS A_this_layer_finish(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+STATUS A_this_layer_finish(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb)
 {
     PPP_FSM(tim,port_ccb,E_DOWN);
 
     return TRUE;
 }
 
-STATUS A_this_layer_up(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+STATUS A_this_layer_up(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb)
 {
 	unsigned char buffer[MSG_BUF];
     uint16_t mulen;
 
-	if (port_ccb->ppp_phase.ppp_payload->ppp_protocol == htons(LCP_PROTOCOL)) {
+	if (port_ccb->ppp_phase[port_ccb->cp].ppp_payload->ppp_protocol == htons(LCP_PROTOCOL)) {
     	memset(buffer,0,MSG_BUF);
     	if (build_auth_request_pap(buffer,port_ccb,&mulen) < 0)
     		return FALSE;
     	drv_xmit(buffer,mulen);
     }
-    else if (port_ccb->ppp_phase.ppp_payload->ppp_protocol == htons(IPCP_PROTOCOL)) {
+    else if (port_ccb->ppp_phase[port_ccb->cp].ppp_payload->ppp_protocol == htons(IPCP_PROTOCOL)) {
     	data_plane_start = TRUE;
-    	puts("start to send data via pppoe session.");
+    	printf("Now we can start to send data via pppoe session id 0x%x.\n", htons(port_ccb->session_id));
+    	printf("Our IP address is %" PRIu8 ".%" PRIu8 ".%" PRIu8 ".%" PRIu8 ", gateway IP address is %" PRIu8 ".%" PRIu8 ".%" PRIu8 ".%" PRIu8 ".\n", *(((uint8_t *)&(port_ccb->ipv4))), *(((uint8_t *)&(port_ccb->ipv4))+1), *(((uint8_t *)&(port_ccb->ipv4))+2), *(((uint8_t *)&(port_ccb->ipv4))+3), *(((uint8_t *)&(port_ccb->ipv4_gw))), *(((uint8_t *)&(port_ccb->ipv4_gw))+1), *(((uint8_t *)&(port_ccb->ipv4_gw))+2), *(((uint8_t *)&(port_ccb->ipv4_gw))+3));
     }
     printf("this layer up\n");
 
     return TRUE;
 }
 
-STATUS A_this_layer_down(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+STATUS A_this_layer_down(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb)
 {
     printf("this layer down\n");
 
     return TRUE;
 }
 
-STATUS A_init_restart_count(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+STATUS A_init_restart_count(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb)
 {
     printf("init restart count\n");
     
     return TRUE;
 }
 
-STATUS A_init_restart_config(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+STATUS A_init_restart_config(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb)
 {
     printf("init config req timer start\n");
     rte_timer_stop(tim);
-    port_ccb->ppp_phase.timer_counter = 9;
-	rte_timer_reset(tim,3*rte_get_timer_hz(),PERIODICAL,4,A_send_config_request,port_ccb);
+    port_ccb->ppp_phase[port_ccb->cp].timer_counter = 9;
+	rte_timer_reset(tim,3*rte_get_timer_hz(),PERIODICAL,4,(rte_timer_cb_t)A_send_config_request,port_ccb);
 
     return TRUE;
 }
 
-STATUS A_init_restart_termin(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+STATUS A_init_restart_termin(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb)
 {
     printf("init termin req timer start\n");
     rte_timer_stop(tim);
-    port_ccb->ppp_phase.timer_counter = 9;
-	rte_timer_reset(tim,3*rte_get_timer_hz(),PERIODICAL,4,A_send_terminate_request,port_ccb);
+    port_ccb->ppp_phase[port_ccb->cp].timer_counter = 9;
+	rte_timer_reset(tim,3*rte_get_timer_hz(),PERIODICAL,4,(rte_timer_cb_t)A_send_terminate_request,port_ccb);
 
     return TRUE;
 }
 
-STATUS A_send_config_request(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+STATUS A_send_config_request(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb)
 {
     unsigned char buffer[MSG_BUF];
     uint16_t mulen;
 
-    if (port_ccb->ppp_phase.timer_counter == 0) {
+    if (port_ccb->ppp_phase[port_ccb->cp].timer_counter == 0) {
     	rte_timer_stop(tim);
     	puts("config request timeout.");
     	PPP_FSM(tim,port_ccb,E_TIMEOUT_COUNTER_EXPIRED);
@@ -716,12 +718,12 @@ STATUS A_send_config_request(__attribute__((unused)) struct rte_timer *tim, tPPP
     if (build_config_request(buffer,port_ccb,&mulen) < 0)
         return FALSE;
     drv_xmit(buffer,mulen);
-    port_ccb->ppp_phase.timer_counter--;
+    port_ccb->ppp_phase[port_ccb->cp].timer_counter--;
     
     return TRUE;
 }
 
-STATUS A_send_config_nak_rej(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+STATUS A_send_config_nak_rej(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb)
 {
     unsigned char buffer[MSG_BUF];
     uint16_t mulen;
@@ -733,7 +735,7 @@ STATUS A_send_config_nak_rej(__attribute__((unused)) struct rte_timer *tim, tPPP
     return TRUE;
 }
 
-STATUS A_send_config_ack(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+STATUS A_send_config_ack(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb)
 {
     unsigned char buffer[MSG_BUF];
     uint16_t mulen;
@@ -745,12 +747,12 @@ STATUS A_send_config_ack(__attribute__((unused)) struct rte_timer *tim, tPPP_POR
     return TRUE;
 }
 
-STATUS A_send_terminate_request(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+STATUS A_send_terminate_request(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb)
 {
     unsigned char buffer[MSG_BUF];
     uint16_t mulen;
 
-    if (port_ccb->ppp_phase.timer_counter == 0) {
+    if (port_ccb->ppp_phase[port_ccb->cp].timer_counter == 0) {
     	rte_timer_stop(tim);
     	puts("config request timeout.");
     	PPP_FSM(tim,port_ccb,E_TIMEOUT_COUNTER_EXPIRED);
@@ -758,12 +760,12 @@ STATUS A_send_terminate_request(__attribute__((unused)) struct rte_timer *tim, t
     if (build_terminate_request(buffer,port_ccb,&mulen) < 0)
         return FALSE;
     drv_xmit(buffer,mulen);
-    port_ccb->ppp_phase.timer_counter--;
+    port_ccb->ppp_phase[port_ccb->cp].timer_counter--;
     
     return TRUE;
 }
 
-STATUS A_send_terminate_ack(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+STATUS A_send_terminate_ack(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb)
 {
     unsigned char buffer[MSG_BUF];
     uint16_t mulen;
@@ -775,7 +777,7 @@ STATUS A_send_terminate_ack(__attribute__((unused)) struct rte_timer *tim, tPPP_
     return TRUE;
 }
 
-STATUS A_send_code_reject(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+STATUS A_send_code_reject(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb)
 {
     unsigned char buffer[MSG_BUF];
     uint16_t mulen;
@@ -787,7 +789,7 @@ STATUS A_send_code_reject(__attribute__((unused)) struct rte_timer *tim, tPPP_PO
     return TRUE;
 }
 
-STATUS A_send_echo_reply(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+STATUS A_send_echo_reply(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb)
 {
     unsigned char buffer[MSG_BUF];
     uint16_t mulen;
@@ -795,26 +797,25 @@ STATUS A_send_echo_reply(__attribute__((unused)) struct rte_timer *tim, tPPP_POR
     if (build_echo_reply(buffer,port_ccb,&mulen) < 0)
         return FALSE;
     drv_xmit(buffer,mulen);
-    printf("send echo reply\n");
 
     return TRUE;
 }
 
-STATUS A_create_up_event(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+STATUS A_create_up_event(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb)
 {
     printf("create up event\n");
 
     return TRUE;
 }
 
-STATUS A_create_down_event(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+STATUS A_create_down_event(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb)
 {
     printf("create down event\n");
 
     return TRUE;
 }
 
-STATUS A_zero_restart_count(__attribute__((unused)) struct rte_timer *tim, tPPP_PORT *port_ccb)
+STATUS A_zero_restart_count(__attribute__((unused)) struct rte_timer *tim, __attribute__((unused)) tPPP_PORT *port_ccb)
 {
     printf("zero restart count\n");
 

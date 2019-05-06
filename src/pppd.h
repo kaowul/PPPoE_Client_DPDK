@@ -6,6 +6,7 @@
   Designed by THE on Jan 14, 2019
 /\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\*/
 #include <common.h>
+#include <rte_timer.h>
 
 #define ETH_MTU					1500
 #define TEST_PORT_ID			1
@@ -22,6 +23,8 @@
 #define FWD_REFLECTIVE_RELAY	1
 #define CAP_VSI_DISCOV_PROTO	1
 #define CAP_802_1X_AUTH_REQ		1
+
+#define USER					1
 
 typedef struct {
 	U8		subt;
@@ -66,7 +69,6 @@ typedef struct ppp_lcp_header {
 	uint8_t code;
 	uint8_t identifier;
 	uint16_t length;
-	//uint8_t options[0];
 }ppp_lcp_header_t;
 
 typedef struct ppp_pap_ack_nak {
@@ -76,7 +78,6 @@ typedef struct ppp_pap_ack_nak {
 
 typedef struct ppp_payload {
 	uint16_t ppp_protocol;
-	//ppp_lcp_header_t *ppp_lcp;
 }ppp_payload_t;
 
 typedef struct ppp_lcp_options {
@@ -93,6 +94,7 @@ typedef struct pppoe_phase {
 }pppoe_phase_t;
 
 typedef struct ppp_phase {
+	U8 					state;
 	struct ethhdr 		*eth_hdr;
 	pppoe_header_t 		*pppoe_header;
 	ppp_payload_t 		*ppp_payload;
@@ -104,49 +106,62 @@ typedef struct ppp_phase {
 
 //========= The structure of port ===========
 typedef struct {
-	BOOL		enable;
-	U8 			state;
-	U8			query_cnt;
-	U16			port;
+	BOOL				enable;
+	U8					query_cnt;
+	U16					port;
 
-	U32			imsg_cnt;
-	U32			omsg_cnt;
-	U32			err_imsg_cnt;	
+	U32					imsg_cnt;
+	U32					omsg_cnt;
+	U32					err_imsg_cnt;	
 	
-	//tPPP_MSG 	imsg; //imsg.tlv[].vp still make use mailbox's data memory
-	
-	tSUB_VAL	chassis_id;
-	tSUB_VAL	port_id;
+	tSUB_VAL			chassis_id;
+	tSUB_VAL			port_id;
 		
-	U32			ttl;
-	char		port_desc[80];
-	char		sys_name[80];
-	char		sys_desc[255];
+	U32					ttl;
+	char				port_desc[80];
+	char				sys_name[80];
+	char				sys_desc[255];
 	
-	tSYS_CAP	sys_cap;
-	tMNG_ADDR  	mng_addr;
-	ppp_phase_t ppp_phase;
-	int 		cp;	//cp is "control protocol", means we need to determine cp is LCP or NCP after parsing packet
+	tSYS_CAP			sys_cap;
+	tMNG_ADDR  			mng_addr;
+
+	ppp_phase_t 		ppp_phase[2];
+	int 				cp;	//cp is "control protocol", means we need to determine cp is LCP or NCP after parsing packet
+	uint16_t 			session_id;
+	uint8_t				phase;
+
+	unsigned char 		src_mac[6];
+	unsigned char 		dst_mac[6];
+	unsigned char 		lan_mac[6];
+
+	uint32_t    		ipv4;
+	uint32_t			ipv4_gw;
+	uint32_t			primary_dns;
+	uint32_t			second_dns;
+
+	uint8_t				identifier;
+	uint32_t			magic_num;
+
+	BOOL				is_pap_auth;
+	unsigned char 		*user_id;
+	unsigned char 		*passwd;
+
+	BOOL				data_plane_start;
+
+	struct rte_timer 	pppoe;
+	struct rte_timer 	ppp;
 } tPPP_PORT;
 
 extern U8	 			g_loc_mac[]; //system mac addr -- global variable
-extern tPPP_PORT		ppp_ports[2];
-extern tIPC_ID 			pppQid;
-extern tIPC_ID 			pppQid_main;
+extern tPPP_PORT		ppp_ports[USER];
 extern U32				ppp_interval;
 extern U8				ppp_max_msg_per_query;
 
-extern void 		PPP_save_imsg(/*tPPP_MSG *imsg*/);
-/*extern STATUS 		CLI_config_ppp_interval(U8 secs);
-extern STATUS 		CLI_config_ppp_msg_num_per_sec(U8 count);
-extern STATUS 		CLI_config_ppp_ttl(U16 secs);
-extern STATUS 		CLI_config_ppp_init_delay(U16 secs);
-extern void 		CLI_config_ppp_port(U16 port, BOOL enable);*/
-int 			ppp_init(void);
+int 				ppp_init(void);
 
-int pppdInit(void);
-void PPP_bye(void);
-int control_plane(void);
+int 				pppdInit(void);
+void 				PPP_bye(void);
+int 				control_plane(void);
 
 /*-----------------------------------------
  * Queue between IF driver and daemon
